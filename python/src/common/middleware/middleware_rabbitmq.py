@@ -1,10 +1,12 @@
-import time
-
 import pika
 from pika.adapters.blocking_connection import BlockingChannel
 from pika.spec import Basic
 from pika.frame import Method
-from .middleware import MessageMiddlewareQueue, MessageMiddlewareExchange
+from pika.exceptions import AMQPConnectionError
+from .middleware import MessageMiddlewareCloseError, MessageMiddlewareDisconnectedError, MessageMiddlewareMessageError, MessageMiddlewareQueue, MessageMiddlewareExchange
+
+# Exceptions doc
+# https://pika.readthedocs.io/en/stable/_modules/pika/exceptions.html
 
 class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
@@ -23,21 +25,37 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
     
     def start_consuming(self, on_message_callback):
         self.on_message_callback = on_message_callback
-        self.channel.basic_consume(queue=self.queue_name, 
-                                   on_message_callback=self._on_message_received, 
-                                   auto_ack=False)
-        self.channel.start_consuming()
+        try:
+            self.channel.basic_consume(queue=self.queue_name, 
+                                       on_message_callback=self._on_message_received, 
+                                       auto_ack=False)
+            self.channel.start_consuming()
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
+        except Exception as e:
+            raise MessageMiddlewareMessageError() from e
 	
     def stop_consuming(self):
-        self.channel.stop_consuming()
-	
+        try:
+            self.channel.stop_consuming()
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
+
     def send(self, message):
-        self.channel.basic_publish(exchange='',
-                                   routing_key=self.queue_name,
-                                   body=message)
+        try:
+            self.channel.basic_publish(exchange='',
+                                       routing_key=self.queue_name,
+                                       body=message)
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
+        except Exception as e:
+            raise MessageMiddlewareMessageError() from e
 
     def close(self):
-        self.connection.close()
+        try:
+            self.connection.close()
+        except Exception as e:
+            raise MessageMiddlewareCloseError() from e
 
 class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 
@@ -54,29 +72,45 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self.channel.exchange_declare(exchange=self.exchange_name, exchange_type='direct')
 
     def start_consuming(self, on_message_callback):
-        result: Method = self.channel.queue_declare(queue='', exclusive=True)
-        queue_name: str = result.method.queue
-
-        for key in self.routing_keys:
-            self.channel.queue_bind(exchange=self.exchange_name,
-                                    queue=queue_name,
-                                    routing_key=key)
-        
         self.on_message_callback = on_message_callback
-        self.channel.basic_consume(queue=queue_name, 
-                                   on_message_callback=self._on_message_received, 
-                                   auto_ack=False)
-        self.channel.start_consuming()
+        try:
+            result: Method = self.channel.queue_declare(queue='', exclusive=True)
+            queue_name: str = result.method.queue
+
+            for key in self.routing_keys:
+                self.channel.queue_bind(exchange=self.exchange_name,
+                                        queue=queue_name,
+                                        routing_key=key)
+            
+            self.channel.basic_consume(queue=queue_name, 
+                                       on_message_callback=self._on_message_received, 
+                                       auto_ack=False)
+            self.channel.start_consuming()
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
+        except Exception as e:
+            raise MessageMiddlewareMessageError() from e
 
     def stop_consuming(self):
-        self.channel.stop_consuming()
+        try:
+            self.channel.stop_consuming()
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
 
     def send(self, message):
-        # Should publishers with multiple routing keys be supported?
-        for key in self.routing_keys:
-            self.channel.basic_publish(exchange=self.exchange_name,
-                                       routing_key=key,
-                                       body=message)
+        try:
+            # Should publishers with multiple routing keys be supported?
+            for key in self.routing_keys:
+                self.channel.basic_publish(exchange=self.exchange_name,
+                                           routing_key=key,
+                                           body=message)
+        except AMQPConnectionError as e:
+            raise MessageMiddlewareDisconnectedError() from e
+        except Exception as e:
+            raise MessageMiddlewareMessageError() from e
 
     def close(self):
-        self.connection.close()
+        try:
+            self.connection.close()
+        except Exception as e:
+            raise MessageMiddlewareCloseError() from e
