@@ -12,7 +12,8 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
     def _on_message_received(self, ch: BlockingChannel, method: Basic.Deliver, properties, body: bytes):
         ack_func = lambda: ch.basic_ack(delivery_tag = method.delivery_tag)
-        self.on_message_callback(body, ack_func, ch.basic_nack)
+        nack_func = lambda: ch.basic_nack(delivery_tag = method.delivery_tag)
+        self.on_message_callback(body, ack_func, nack_func)
 
     def __init__(self, host, queue_name):
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host))
@@ -61,7 +62,8 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
 
     def _on_message_received(self, ch: BlockingChannel, method: Basic.Deliver, properties, body: bytes):
         ack_func = lambda: ch.basic_ack(delivery_tag = method.delivery_tag)
-        self.on_message_callback(body, ack_func, ch.basic_nack)
+        nack_func = lambda: ch.basic_nack(delivery_tag = method.delivery_tag)
+        self.on_message_callback(body, ack_func, nack_func)
     
     def __init__(self, host, exchange_name, routing_keys):
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host))
